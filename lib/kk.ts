@@ -2,7 +2,26 @@ type HeaderMap = Record<string, string>;
 
 const env = (name: string, fallback = "") => process.env[name] ?? fallback;
 
-let upstreamCookie = "";
+export class UpstreamError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "UpstreamError";
+  }
+}
+
+export interface StoreQueryBody {
+  fuzzy_name: string;
+  lat: number;
+  lng: number;
+  deliverable: number;
+  order_type: unknown[];
+  page: { page_index: number; page_size: number };
+  brand_codes: unknown[];
+  disable_delivery_distance_limit: boolean;
+}
 
 function buildHeaders(): HeaderMap {
   const h: HeaderMap = {
@@ -40,9 +59,7 @@ function buildHeaders(): HeaderMap {
     if (v) h[k] = v;
   }
 
-  const configuredCookie = process.env.KK_COOKIE?.trim();
-  if (configuredCookie) h.cookie = configuredCookie;
-  else if (upstreamCookie) h.cookie = upstreamCookie;
+  h.cookie = process.env.KK_COOKIE?.trim() ?? "";
 
   const extraRaw = env("KK_EXTRA_HEADERS");
   if (extraRaw) {
@@ -52,13 +69,6 @@ function buildHeaders(): HeaderMap {
     }
   }
   return h;
-}
-
-function rememberSetCookie(response: Response) {
-  const value = response.headers.get("set-cookie");
-  if (!value) return;
-  const first = value.split(",")[0].split(";")[0].trim();
-  if (first) upstreamCookie = first;
 }
 
 export async function kkPost<T>(url: string, body: unknown): Promise<{status: number; data: T; headers: Record<string,string>}> {
@@ -74,7 +84,6 @@ export async function kkPost<T>(url: string, body: unknown): Promise<{status: nu
       signal: controller.signal
     });
 
-    rememberSetCookie(response);
     const text = await response.text();
     let parsed: any = null;
     try { parsed = text ? JSON.parse(text) : null; } catch {}
@@ -84,7 +93,7 @@ export async function kkPost<T>(url: string, body: unknown): Promise<{status: nu
 
     if (!response.ok) {
       const preview = text.replace(/\s+/g, " ").slice(0, 500);
-      throw new Error(`Upstream HTTP ${response.status}: ${preview}`);
+      throw new UpstreamError(response.status, `Upstream HTTP ${response.status}: ${preview}`);
     }
 
     return { status: response.status, data: parsed as T, headers: responseHeaders };
@@ -93,7 +102,22 @@ export async function kkPost<T>(url: string, body: unknown): Promise<{status: nu
   }
 }
 
-export function storesBody(page: number, pageSize: number) {
+export function isStoreQueryBody(value: unknown): value is StoreQueryBody {
+  if (typeof value !== "object" || value === null) return false;
+  const body = value as Partial<StoreQueryBody>;
+  return typeof body.fuzzy_name === "string"
+    && typeof body.lat === "number" && Number.isFinite(body.lat)
+    && typeof body.lng === "number" && Number.isFinite(body.lng)
+    && typeof body.deliverable === "number" && Number.isFinite(body.deliverable)
+    && Array.isArray(body.order_type)
+    && typeof body.page === "object" && body.page !== null
+    && Number.isSafeInteger(body.page.page_index) && body.page.page_index >= 1
+    && Number.isSafeInteger(body.page.page_size) && body.page.page_size >= 1 && body.page.page_size <= 50
+    && Array.isArray(body.brand_codes)
+    && typeof body.disable_delivery_distance_limit === "boolean";
+}
+
+export function storesBody(page: number, pageSize: number): StoreQueryBody {
   return {
     fuzzy_name: "",
     lat: Number(env("KK_LAT", "-7.7206928")),

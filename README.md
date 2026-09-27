@@ -20,10 +20,13 @@ npm run dev
 Then:
 
 - `GET /api/upstream/stores?page=1&pageSize=10`
+- `POST /api/upstream/stores` with the same JSON body as the Android `query_pageable_store` request
 - `POST /api/upstream/menu` with `{"storeCode":"YYK.AMSPRKG"}`
 - `npm run check`
 
-The server automatically remembers a `Set-Cookie` returned by the upstream process and sends it on later requests. It does not expose upstream credentials to the browser.
+The stores proxy accepts both its original GET interface and the Android-style POST interface; both call the upstream with POST. Upstream HTTP errors keep their status in the proxy response, so an upstream 405 is distinguishable from a local Next.js method error. The proxy does not automatically replay upstream `Set-Cookie`; the supplied Android captures send an empty cookie header despite receiving `acw_tc` cookies. Set `KK_COOKIE` only when a fresh capture confirms it is needed.
+
+`WToken` and `ClSignature` are read as supplied request credentials. Their values change across successful captures, and this project does not implement or infer their generation or refresh algorithm. A stale capture may therefore stop working; refresh credentials only through a verified, supported source.
 
 ## Fresh capture workflow
 

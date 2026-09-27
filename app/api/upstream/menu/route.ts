@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { kkPost, menuBody, menuUrl } from "../../../../lib/kk";
+import { kkPost, menuBody, menuUrl, UpstreamError } from "../../../../lib/kk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +23,6 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: false,
       error: e instanceof Error ? e.message : String(e)
-    }, { status: 502 });
+    }, { status: e instanceof UpstreamError ? e.status : 502 });
   }
 }
